@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.env
+venv/
+.venv/
+node_modules/
+.next/
+coverage/
+htmlcov/
+data/storage/*
+!data/storage/.gitkeep
+FULL_CODE_DUMP.md
