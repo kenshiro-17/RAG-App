@@ -34,6 +34,7 @@ class FakeOpenAIClient:
 
 def test_embedding_batching(monkeypatch) -> None:
     service = OpenAIService()
+    service.settings.embedding_provider = "openai"
     fake_embeddings = FakeEmbeddingsClient()
     service.client = FakeOpenAIClient(fake_embeddings)  # type: ignore[assignment]
 
@@ -46,6 +47,7 @@ def test_embedding_batching(monkeypatch) -> None:
 
 def test_embedding_retry(monkeypatch) -> None:
     service = OpenAIService()
+    service.settings.embedding_provider = "openai"
     fake_embeddings = FakeEmbeddingsClient()
     fake_embeddings.failures_remaining = 2
     service.client = FakeOpenAIClient(fake_embeddings)  # type: ignore[assignment]

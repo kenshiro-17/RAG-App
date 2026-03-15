@@ -1,11 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { Button, Card, Input } from "@/components/ui";
 import { listWorkspaces, streamChat, type ChatFinal, type Citation, type Workspace } from "@/lib/api";
-import { getAccessToken } from "@/lib/auth";
 
 type Message = {
   role: "user" | "assistant";
@@ -13,7 +11,6 @@ type Message = {
 };
 
 export default function ChatPage() {
-  const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -26,11 +23,6 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
-
     async function init() {
       try {
         const ws = await listWorkspaces();
@@ -42,7 +34,7 @@ export default function ChatPage() {
     }
 
     void init();
-  }, [router]);
+  }, []);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();

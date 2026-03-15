@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import uuid
 
+from app.core.config import get_settings
 from app.db import models
 from app.services.retrieval import RetrievalService
 
 
 def _vector(value: float) -> list[float]:
-    vec = [0.0] * 1536
+    vec = [0.0] * get_settings().embedding_dimensions
     vec[0] = value
     return vec
 

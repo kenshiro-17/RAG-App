@@ -5,6 +5,7 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from huggingface_hub import InferenceClient
 from openai import AsyncOpenAI, OpenAI
 
 from app.core.config import get_settings
@@ -14,8 +15,12 @@ class OpenAIService:
     def __init__(self) -> None:
         settings = get_settings()
         self.settings = settings
-        self.client = OpenAI(api_key=settings.openai_api_key)
-        self.async_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        client_kwargs = {"api_key": settings.openai_api_key}
+        if settings.openai_base_url:
+            client_kwargs["base_url"] = settings.openai_base_url
+        self.client = OpenAI(**client_kwargs)
+        self.async_client = AsyncOpenAI(**client_kwargs)
+        self.hf_client = InferenceClient(api_key=settings.openai_api_key) if settings.embedding_provider == "huggingface" else None
 
     def embed_texts(
         self,
@@ -42,6 +47,8 @@ class OpenAIService:
         last_exc: Exception | None = None
         for attempt in range(max_retries):
             try:
+                if self.settings.embedding_provider == "huggingface":
+                    return self._embed_batch_with_huggingface(batch, model)
                 response = self.client.embeddings.create(model=model, input=batch)
                 return [item.embedding for item in response.data]
             except Exception as exc:  # noqa: BLE001
@@ -52,6 +59,29 @@ class OpenAIService:
                 delay = min(delay * 2, 16.0)
 
         raise RuntimeError(f"Embedding request failed after retries: {last_exc}")
+
+    def _embed_batch_with_huggingface(self, batch: list[str], model: str) -> list[list[float]]:
+        if self.hf_client is None:
+            self.hf_client = InferenceClient(api_key=self.settings.openai_api_key)
+
+        vectors: list[list[float]] = []
+        for text in batch:
+            output = self.hf_client.feature_extraction(text, model=model)
+            vector: list[float] | None = None
+            if isinstance(output, list):
+                if output and isinstance(output[0], (int, float)):
+                    vector = [float(x) for x in output]
+                elif output and isinstance(output[0], list):
+                    vector = [float(x) for x in output[0]]
+            if not vector:
+                raise RuntimeError("Unexpected Hugging Face embedding response format")
+            if len(vector) != self.settings.embedding_dimensions:
+                raise RuntimeError(
+                    f"Embedding dimension mismatch: got {len(vector)} expected {self.settings.embedding_dimensions}. "
+                    "Update EMBEDDING_DIMENSIONS or choose a compatible embedding model."
+                )
+            vectors.append(vector)
+        return vectors
 
     async def stream_answer(
         self,

@@ -21,9 +21,15 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    auth_disabled: bool = True
+    auth_default_email: str = "demo@local.dev"
+    auth_default_workspace_name: str = "Demo Workspace"
 
     openai_api_key: str = ""
+    openai_base_url: str | None = None
     embedding_model: str = "text-embedding-3-small"
+    embedding_provider: str = "openai"
+    embedding_dimensions: int = 1536
     response_model: str = "gpt-4.1-mini"
 
     storage_backend: str = "local"

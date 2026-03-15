@@ -1,94 +1,138 @@
 # Multi-tenant RAG Platform
 
-Production-grade, portfolio-ready Retrieval-Augmented Generation (RAG) platform for chatting with uploaded PDFs.
+Production-grade Retrieval-Augmented Generation platform for chatting with uploaded PDFs.
 
-This project demonstrates full-stack AI system design with multi-tenancy, async ingestion, hybrid retrieval, grounding safeguards, citation-first answers, evaluation metrics, and deployable infrastructure.
+This project is a full-stack AI system, not a single-model demo. It combines tenant-aware authentication, asynchronous ingestion, hybrid retrieval, grounding safeguards, citation-first answers, and deployable local infrastructure.
 
-## Highlights
+## Key Features
 
-- Multi-tenant architecture with strict `workspace_id` scoping
-- JWT auth (`access + refresh`) with hashed passwords
-- Async PDF ingestion pipeline via Celery + Redis
-- Token-aware chunking (`450` tokens, `80` overlap) with `tiktoken`
-- OpenAI embeddings (`text-embedding-3-small`)
+- Multi-tenant workspace isolation with strict `workspace_id` scoping
+- JWT authentication with access and refresh tokens
+- Async PDF ingestion via Celery + Redis
+- Token-aware chunking with overlap
+- Embeddings stored in Postgres with `pgvector`
 - Hybrid retrieval:
-  - Vector similarity (`pgvector` cosine)
-  - Keyword relevance (`Postgres tsvector/ts_rank`)
-  - Weighted score fusion
-- MMR reranking for diverse context selection
+  - vector similarity
+  - keyword relevance
+  - weighted score fusion
+  - MMR reranking
 - Prompt-injection filtering on retrieved text
-- Streaming chat responses via SSE
-- Citation enforcement in final answers
-- Evaluation harness with retrieval + grounding metrics
-- Dockerized local environment (Postgres+pgvector, Redis, API, Worker, Web)
+- Streaming answers via Server-Sent Events
+- Citation-first responses with snippet expansion in the UI
+- Evaluation harness for retrieval and grounding quality
 
 ## Tech Stack
 
 ### Frontend
+
 - Next.js 14
-- React + TypeScript
+- React 18
+- TypeScript
 - Tailwind CSS
-- SSE streaming chat UI
-- Citation sidebar with snippet expansion
+- SSE-based chat streaming
 
 ### Backend
+
 - FastAPI
 - SQLAlchemy + Alembic
 - Postgres + `pgvector`
-- Redis + Celery worker
+- Redis + Celery
 - PyPDF + `tiktoken`
-- OpenAI Python SDK (Embeddings + Responses)
-
-## System Architecture
-
-```mermaid
-flowchart LR
-    U["User"] --> W["Next.js Web App"]
-    W -->|"JWT + API calls"| A["FastAPI API"]
-    A -->|"metadata"| P["Postgres + pgvector"]
-    A -->|"enqueue job"| R["Redis"]
-    R --> C["Celery Worker"]
-    C -->|"chunks + embeddings"| P
-    C -->|"file read"| S["Storage (Local/S3)"]
-    A -->|"file write"| S
-    A -->|"embed/query/stream"| O["OpenAI API"]
-```
+- OpenAI-compatible responses endpoint
+- Hugging Face embeddings (`BAAI/bge-large-en-v1.5`)
 
 ## Repository Structure
 
 ```text
 backend/
   app/
-    api/routes/         # Auth, documents, workspaces, chat, health
-    core/               # Config, auth, logging, rate limiting, deps
-    db/                 # Models, session, base
-    services/           # Retrieval, chunking, OpenAI, storage, policy
-    tasks/              # Celery app + ingestion task
-    eval/               # Evaluation harness + dataset loaders
-  alembic/              # DB migrations
-  tests/                # Unit + integration tests
-  scripts/              # Eval runner
+    api/routes/         # auth, documents, chat, workspaces, health
+    core/               # config, auth, logging, rate limiting
+    db/                 # models and sessions
+    services/           # retrieval, chunking, storage, answer generation
+    tasks/              # Celery app and ingestion tasks
+    eval/               # retrieval and grounding evaluation logic
+  alembic/
+  tests/
+  scripts/
 web/
-  app/                  # Next.js routes (/login, /documents, /chat)
-  lib/                  # API client + auth token helpers
-  components/           # UI components
+  app/
+  components/
+  lib/
+data/
+  storage/
 docker-compose.yml
 ```
 
-## Local Setup (Docker)
+## Architecture
+
+```mermaid
+flowchart LR
+    U["User"] --> W["Next.js Web App"]
+    W -->|JWT + API calls| A["FastAPI API"]
+    A -->|metadata + vectors| P["Postgres + pgvector"]
+    A -->|enqueue ingestion| R["Redis"]
+    R --> C["Celery Worker"]
+    C -->|chunk + embed| P
+    C -->|read/write files| S["Storage (local or S3)"]
+    A -->|LLM responses| O["OpenAI-compatible endpoint"]
+```
+
+## Prerequisites
+
+- Docker + Docker Compose
+- A valid API key for the configured model provider
+- A strong `JWT_SECRET_KEY`
+
+Optional for local non-Docker workflows:
+
+- Python 3.11+
+- Node.js 18+
+
+## Getting Started (Docker)
+
+### 1. Clone the repository
 
 ```bash
-cd "/Users/rahul/Documents/Projects/RAG App"
-cp .env.example .env
-# set OPENAI_API_KEY and JWT_SECRET_KEY in .env
+git clone https://github.com/kenshiro-17/Multi-tenant-RAG-Platform.git
+cd 'RAG App'
+```
 
+### 2. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Minimum values to set:
+
+| Variable | Purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | Model or router API key |
+| `OPENAI_BASE_URL` | OpenAI-compatible endpoint |
+| `JWT_SECRET_KEY` | Auth signing secret |
+| `DATABASE_URL` | Postgres connection string |
+| `REDIS_URL` | Redis URL |
+| `NEXT_PUBLIC_API_URL` | Frontend API base URL |
+
+Important toggles:
+
+- `AUTH_DISABLED=true` allows easier local demo mode
+- `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, and retrieval weights control retrieval behavior
+- `LOCAL_STORAGE_PATH` configures file storage when using local storage mode
+
+### 3. Start the stack
+
+```bash
 docker compose up --build -d
 docker compose exec api alembic upgrade head
 ```
 
 Endpoints:
-- Web: http://localhost:3000
-- API docs: http://localhost:8000/docs
+
+- Web: `http://localhost:3000`
+- API docs: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/health`
 
 ## API Surface
 
@@ -107,90 +151,104 @@ Endpoints:
 
 ## Retrieval Pipeline
 
-1. Embed user query
-2. Retrieve vector candidates (`cosine_distance`)
-3. Retrieve keyword candidates (`ts_rank_cd` over `to_tsvector`)
-4. Merge and normalize scores
-5. Apply weighted fusion (`vector_weight`, `keyword_weight`)
-6. Rerank with MMR for diversity
-7. Sanitize chunks against prompt-injection patterns
+1. Store the uploaded PDF in configured storage
+2. Parse and chunk the document asynchronously
+3. Generate embeddings for chunks
+4. Store vectors and metadata in Postgres with `pgvector`
+5. Embed incoming query
+6. Retrieve vector candidates
+7. Retrieve keyword candidates via Postgres text search
+8. Fuse scores and rerank with MMR
+9. Sanitize retrieved text for prompt-injection patterns
+10. Generate a citation-first answer and stream it to the client
 
-## Grounding & Safety
+## Evaluation and Safety
 
-- Strict system prompt enforcing context-only answers
-- Fixed refusal policy when evidence is missing:
-  - `I couldn't find that in your documents.`
-- Prompt-injection filtering on chunk text
-- Citation format enforcement and citation object extraction
-- Per-user token-bucket rate limiting
+The repo includes a real evaluation layer, not just application code.
 
-## Evaluation Harness
+Covered concerns include:
 
-Run offline evaluation against labeled cases:
+- retrieval quality
+- grounding quality
+- prompt-injection filtering
+- citation enforcement
+- tenant isolation
+
+Run tests:
+
+```bash
+pytest backend/tests -q
+```
+
+If you have evaluation scripts configured in `backend/eval/` and `backend/scripts/`, run them after migrations and data setup to validate retrieval behavior under your target model/provider settings.
+
+## Local Development Without Docker
+
+If you need to run services manually:
+
+### Backend
 
 ```bash
 cd backend
-python scripts/run_evaluation.py --dataset eval/sample_dataset.jsonl --top-k 8
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-Metrics:
-- `recall_at_k`
-- `mrr`
-- `citation_correctness`
-- `refusal_rate`
-- `refusal_accuracy`
-
-Dataset format (`jsonl`):
-
-```json
-{"workspace_id":"<workspace_uuid>","question":"...","relevant_chunk_ids":["<chunk_uuid>"],"should_refuse":false}
-```
-
-## Tests
+### Worker
 
 ```bash
 cd backend
-pytest
+celery -A app.tasks.celery_app.celery worker -l info
 ```
 
-DB-backed retrieval tests require:
+### Frontend
 
 ```bash
-export TEST_DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/rag_app_test
-```
-
-## Smoke Test
-
-```bash
-# register
-REGISTER=$(curl -s -X POST http://localhost:8000/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"demo@example.com","password":"StrongPass123"}')
-ACCESS_TOKEN=$(echo "$REGISTER" | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
-
-# workspace
-WORKSPACE_ID=$(curl -s http://localhost:8000/workspaces \
-  -H "Authorization: Bearer $ACCESS_TOKEN" | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["id"])')
-
-# upload
-curl -s -X POST http://localhost:8000/documents/upload \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -F "workspace_id=$WORKSPACE_ID" \
-  -F "file=@/absolute/path/to/file.pdf"
-
-# chat (SSE)
-curl -N -X POST http://localhost:8000/chat \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d "{\"workspace_id\":\"$WORKSPACE_ID\",\"message\":\"What is the release deadline?\",\"debug\":true}"
+cd web
+npm install
+npm run dev
 ```
 
 ## Deployment Notes
 
-- Set `STORAGE_BACKEND=s3` for S3-compatible object storage
-- Use managed Postgres with `pgvector` extension enabled
-- Use managed Redis for Celery + rate limiting
-- Run Alembic migrations before switching traffic
-- Keep secrets in secret manager (never in code)
-- Configure `SENTRY_DSN` for production error tracking
+This project is structured to be deployable, not just runnable.
 
+Production concerns already reflected in the codebase include:
+
+- background ingestion jobs
+- durable vector storage
+- auth tokens
+- prompt-injection filtering
+- SSE streaming
+- observability hook points
+- local or S3-compatible file storage options
+
+Before production deployment:
+
+- disable `AUTH_DISABLED`
+- set a strong `JWT_SECRET_KEY`
+- use managed Postgres and Redis
+- configure monitoring and Sentry if needed
+- validate model/provider latency and cost at expected document volume
+
+## Troubleshooting
+
+### Frontend cannot reach backend
+
+Check `NEXT_PUBLIC_API_URL` and CORS configuration.
+
+### Ingestion jobs do not process
+
+Check that Redis is reachable and the Celery worker is running.
+
+### Vectors are not created
+
+Verify embedding credentials and provider/model settings in `.env`.
+
+### Auth issues in local demo mode
+
+Confirm whether `AUTH_DISABLED` is intentionally enabled.
+
+## License
+
+Add a project license if you plan to distribute or collaborate publicly.

@@ -1,7 +1,6 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { Button, Card, Input } from "@/components/ui";
 import {
@@ -14,10 +13,8 @@ import {
   type Workspace,
   uploadDocument,
 } from "@/lib/api";
-import { getAccessToken } from "@/lib/auth";
 
 export default function DocumentsPage() {
-  const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -32,11 +29,6 @@ export default function DocumentsPage() {
   );
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
-
     async function init() {
       try {
         const ws = await listWorkspaces();
@@ -48,7 +40,7 @@ export default function DocumentsPage() {
     }
 
     void init();
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     if (!workspaceId) return;

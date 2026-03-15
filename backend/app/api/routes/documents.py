@@ -4,7 +4,7 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_workspace_member
@@ -84,13 +84,13 @@ async def upload_document(
     return DocumentOut.model_validate(document)
 
 
-@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_document(
     document_id: str,
     workspace_id: str,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> None:
+) -> Response:
     require_workspace_member(workspace_id, current_user, db)
 
     document = (
@@ -107,6 +107,7 @@ def delete_document(
     db.query(models.DocumentChunk).filter(models.DocumentChunk.document_id == document.id).delete(synchronize_session=False)
     db.delete(document)
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{document_id}/reindex", response_model=DocumentOut)
